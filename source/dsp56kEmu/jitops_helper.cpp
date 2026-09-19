@@ -6,7 +6,7 @@
 namespace dsp56k
 {
 	void dspExecDefaultPreventInterrupt(DSP*);
-	void dspExecNop(DSP*);
+	void dspExecLongInterrupt(DSP*);
 
 	void JitOps::aluSignextendTo64(const JitReg64& _dst, const JitReg64& _src) const
 	{
@@ -264,7 +264,7 @@ namespace dsp56k
 		}
 		else if(_mode == DSP::LongInterrupt)
 		{
-			const auto* ptr = asmjit::func_as_ptr(&dspExecNop);
+			const auto* ptr = asmjit::func_as_ptr(&dspExecLongInterrupt);
 			m_block.mem().mov(reinterpret_cast<uint64_t*>(&m_block.dsp().m_interruptFunc), reinterpret_cast<uint64_t>(ptr));
 		}
 		else

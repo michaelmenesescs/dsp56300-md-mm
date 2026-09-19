@@ -112,6 +112,7 @@ namespace dsp56k
 		const TJitFunc*					m_jitEntries = nullptr;
 		TWord							m_jitEntriesSize = 0;	// number of valid entries in m_jitEntries, see execJit()
 		bool							m_invalidPCReported = false;
+		bool m_cooperativeDoLoops = false;
 		CCRCache						ccrCache;
 
 #ifdef HAVE_ARM64
@@ -306,6 +307,20 @@ namespace dsp56k
 			const auto op = fetchPC();
 
 			execOp(op);
+
+			if(m_cooperativeDoLoops)
+			{
+				while(sr_test_noCache(SR_LF) && reg.pc.var == reg.la.var + 1)
+				{
+					if(reg.lc.var > 1)
+					{
+						--reg.lc.var;
+						setPC(hiword(reg.ss[ssIndex()]));
+						break;
+					}
+					do_end();
+				}
+			}
 		}
 
 		template<typename Ta, typename Tb> void execPeriph() noexcept
@@ -356,6 +371,11 @@ namespace dsp56k
 
 		const uint64_t&		getInstructionCounter		() const	{ return m_instructions; }
 		const uint64_t&		getCycles					() const	{ return m_cycles; }
+
+		// Single-thread machine schedulers must regain control inside a DO body:
+		// a polling instruction may need data from another emulated processor.
+		// Set before execution; the default retains the legacy whole-loop call.
+		void setCooperativeDoLoops(const bool _enabled) { m_cooperativeDoLoops = _enabled; }
 
 		// Cooperative WAIT bound for a single-thread scheduler hosting multiple DSPs. When non-zero,
 		// op_Wait returns control after burning this many instructions without an interrupt, so a

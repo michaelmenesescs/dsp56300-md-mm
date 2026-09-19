@@ -43,7 +43,8 @@ namespace dsp56k
 	{
 		asmjit::CodeHolder codeHolder;
 		codeHolder.init(m_runtime.environment());
-		codeHolder.setLogger(&m_logger);
+		// Logging every emitted instruction is synchronous stdout I/O; disabled to match jitblockchain.cpp
+		// codeHolder.setLogger(&m_logger);
 		codeHolder.setErrorHandler(&m_errorHandler);
 
 		JitEmitter m_asm(&codeHolder);
@@ -247,7 +248,8 @@ namespace dsp56k
 	{
 		asmjit::CodeHolder codeHolder;
 		codeHolder.init(m_runtime.environment());
-		codeHolder.setLogger(&m_logger);
+		// Logging every emitted instruction is synchronous stdout I/O; disabled to match jitblockchain.cpp
+		// codeHolder.setLogger(&m_logger);
 		codeHolder.setErrorHandler(&m_errorHandler);
 
 		JitEmitter m_asm(&codeHolder);
@@ -398,7 +400,8 @@ namespace dsp56k
 	{
 		asmjit::CodeHolder codeHolder;
 		codeHolder.init(m_runtime.environment());
-		codeHolder.setLogger(&m_logger);
+		// Logging every emitted instruction is synchronous stdout I/O; disabled to match jitblockchain.cpp
+		// codeHolder.setLogger(&m_logger);
 		codeHolder.setErrorHandler(&m_errorHandler);
 
 		JitEmitter m_asm(&codeHolder);

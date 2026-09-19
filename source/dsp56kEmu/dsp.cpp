@@ -50,8 +50,10 @@ namespace dsp56k
 	{
 		_dsp->execDefaultPreventInterrupt();
 	}
-	void dspExecNop(DSP*) noexcept
+	void dspExecLongInterrupt(DSP* _dsp) noexcept
 	{
+		// Interrupt entry suppresses further dispatch, not peripheral clocks.
+		_dsp->getExecPeripheralsFunc()(_dsp);
 	}
 	void dspExecInterrupts(DSP* _dsp) noexcept
 	{
@@ -268,20 +270,18 @@ namespace dsp56k
 
 			execOp(op0);
 
-			const auto jumped = reg.sp.var - oldSP;
 
 			// only exec the second op if the first one was a one-word op and we did not jump into a long interrupt
-			if(m_currentOpLen == 1 && !jumped)
+			if(m_currentOpLen == 1 && reg.sp.var == oldSP)
 			{
 				pcCurrentInstruction = vba+1;
 				m_opWordB = 0;
 				execOp(op1);
 
-				// fast interrupt done
-				m_processingMode = DefaultPreventInterrupt;
-				m_interruptFunc = &dspExecDefaultPreventInterrupt;
 			}
-			else if(jumped)
+
+			// Either vector word may contain the JSR that enters a long interrupt.
+			if(reg.sp.var != oldSP)
 			{
 				// Long Interrupt
 
@@ -298,7 +298,7 @@ namespace dsp56k
 				sr_clear(static_cast<CCRMask>(SR_S1 | SR_S0 | SR_SA | SR_LF));
 
 				m_processingMode = LongInterrupt;
-				m_interruptFunc = &dspExecNop;
+				m_interruptFunc = &dspExecLongInterrupt;
 			}
 			else
 			{
@@ -579,6 +579,11 @@ namespace dsp56k
 		const auto stackCount = reg.sc.var;
 		
 		sr_set( SR_LF );
+
+		// Retire only DO itself; execInterpreter checks the loop boundary after
+		// each subsequent instruction so the host can supply data between polls.
+		if(m_cooperativeDoLoops)
+			return true;
 
 		if constexpr(!g_useJIT)
 			m_cycles += getOpcodeCycles(pcCurrentInstruction);

@@ -15,8 +15,124 @@ namespace dsp56k
 		testCCCC();
 		testSubr();
 		testCycleAccounting();
+		testCooperativeDoLoops();
+		testLongInterruptPeripherals();
 		
 		runAllTests();
+		dsp.setCooperativeDoLoops(true);
+		runAllTests();
+		dsp.setCooperativeDoLoops(false);
+	}
+
+	void InterpreterUnitTests::testLongInterruptPeripherals()
+	{
+		if constexpr(g_useJIT)
+			return;
+		for(const bool secondWord : {false, true})
+		{
+			dsp.resetHW();
+			dsp.setCooperativeDoLoops(true);
+			emitToMemory("do #$2,>$104", 0x100);
+			emitToMemory("nop", 0x102);
+			emitToMemory("nop", 0x103);
+			emitToMemory(secondWord ? "nop" : "jsr $200", 0x60);
+			emitToMemory(secondWord ? "jsr $200" : "nop", 0x61);
+			emitToMemory("nop", 0x200);
+			emitToMemory("rti", 0x201);
+			dsp.setPC(0x100);
+			dsp.execInterpreter();
+			const auto sr = dsp.getSR();
+			dsp.execInterrupt(0x60);
+			verify(dsp.getProcessingMode() == DSP::LongInterrupt);
+			verify(dsp.getPC() == 0x200);
+			verify(!dsp.sr_test_noCache(SR_LF));
+			verify(dsp.reg.sc.var == 3);
+
+			// A due peripheral must run during the handler, even while interrupt
+			// dispatch itself is suppressed. Previously its callback was a no-op.
+			peripheralsX.resetDelayCycles(0, 0);
+			dsp.execInterpreter();
+			verify(peripheralsX.getTargetClock() > 0);
+			verify(dsp.getPC() == 0x201);
+			dsp.execInterpreter();
+			verify(dsp.getPC() == 0x102);
+			verify(dsp.getSR() == sr);
+			verify(dsp.reg.sc.var == 2);
+			execUntil(0x104);
+			verify(dsp.reg.sc.var == 0);
+		}
+		dsp.setCooperativeDoLoops(false);
+		dsp.resetHW();
+	}
+
+	void InterpreterUnitTests::testCooperativeDoLoops()
+	{
+		// Compare nested loop results and clocks against the whole-loop interpreter.
+		const auto setup = [&]
+		{
+			dsp.resetHW();
+			dsp.setALU(false, TReg56(static_cast<TReg56::MyType>(0)));
+			dsp.setALU(true, TReg56(static_cast<TReg56::MyType>(0x1000000)));
+			emitToMemory("do #$3,>$107", 0x100);
+			emitToMemory("do #$2,>$106", 0x102);
+			emitToMemory("add b,a", 0x104);
+			emitToMemory("nop", 0x105);
+			emitToMemory("nop", 0x106);
+			dsp.setPC(0x100);
+		};
+		setup();
+		dsp.execInterpreter();
+		const auto reference = dsp.readRegs();
+		const auto cycles = dsp.getCycles();
+		const auto instructions = dsp.getInstructionCounter();
+		verify(dsp.getPC() == 0x107);
+		verify(dsp.aluA().var == 0x6000000);
+
+		setup();
+		dsp.setCooperativeDoLoops(true);
+		dsp.execInterpreter();
+		verify(dsp.getPC() == 0x102);
+		verify(dsp.getInstructionCounter() == 1);
+		execUntil(0x107);
+		verify(dsp.getCycles() == cycles);
+		verify(dsp.getInstructionCounter() == instructions);
+		verify(dsp.reg.a.var == reference.a.var);
+		verify(dsp.reg.la == reference.la && dsp.reg.lc == reference.lc);
+		verify(dsp.reg.sp == reference.sp && dsp.reg.sc == reference.sc);
+		verify(dsp.getSR() == reference.sr);
+
+		// A boot-loader-shaped loop must yield while HRDF is clear, allowing the
+		// single-thread host to supply each word. No cycles or reads are skipped.
+		dsp.resetHW();
+		peripheralsX.getHDI08().setRXRateLimit(0);
+		emitToMemory("do #$2,>$106", 0x100);
+		const auto poll = assembler.assemble("brclr #$0,x:<<$ffffc3,>$0");
+		verify(poll.success());
+		dsp.memWriteP(0x102, poll.word[0]);
+		dsp.memWriteP(0x103, poll.word[1]);
+		emitToMemory("movep x:<<$ffffc6,x0", 0x104);
+		emitToMemory("nop", 0x105);
+		dsp.setPC(0x100);
+		dsp.execInterpreter();
+		for(const TWord word : {0x123456u, 0x654321u})
+		{
+			const auto before = dsp.getInstructionCounter();
+			for(unsigned i = 0; i < 16; ++i)
+				dsp.execInterpreter();
+			verify(dsp.getPC() == 0x102);
+			verify(dsp.getInstructionCounter() == before + 16);
+			peripheralsX.getHDI08().writeRX(&word, 1);
+			dsp.execInterpreter();
+			verify(dsp.getPC() == 0x104);
+			dsp.execInterpreter();
+			verify(dsp.x0() == word);
+			dsp.execInterpreter();
+		}
+		verify(dsp.getPC() == 0x106);
+		verify(!dsp.sr_test_noCache(SR_LF));
+		verify(dsp.reg.sc.var == 0);
+		dsp.setCooperativeDoLoops(false);
+		dsp.resetHW();
 	}
 
 	void InterpreterUnitTests::testOpcodeCacheAllocation()
