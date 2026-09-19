@@ -3,6 +3,13 @@ set(ASMJIT_STATIC TRUE)
 option(DSP56300_DEBUGGER "Build wxWidgets based debugger" OFF)
 option(DSP56K_FORCE_INTERPRETER "Disable the JIT and use the interpreter" OFF)
 
+# iOS kills the process when it executes JIT-generated code: the pages can be mapped, but
+# without the Apple-restricted dynamic-codesigning entitlement running them is fatal.
+# Verified on iOS 26.6.2 / A15 - SIGKILL on the first emulator audio callback.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+	set(DSP56K_FORCE_INTERPRETER ON CACHE BOOL "Disable the JIT and use the interpreter" FORCE)
+endif()
+
 add_subdirectory(asmjit)
 add_subdirectory(dsp56kBase)
 add_subdirectory(dsp56kEmu)
