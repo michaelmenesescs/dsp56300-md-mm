@@ -1,6 +1,9 @@
 #pragma once
 
 #include <atomic>
+#ifdef MD_PC_HISTOGRAM_PROBE
+#include <unordered_map>
+#endif
 
 #include "disasm.h"
 #include "dspconfig.h"
@@ -176,6 +179,14 @@ namespace dsp56k
 
 		DebuggerInterface*	m_debugger = nullptr;
 
+#ifdef MD_PC_HISTOGRAM_PROBE
+	public:
+		// Temporary measurement-only hook, see execInterpreter(). Owned and cleared
+		// by the probe tool, never allocated by product code.
+		std::unordered_map<TWord, uint64_t>* pcHistogram = nullptr;
+	private:
+#endif
+
 		// _____________________________________________________________________________
 		// implementation
 		//
@@ -300,6 +311,14 @@ namespace dsp56k
 #if DSP56300_DEBUGGER
 			if(m_debugger)
 				m_debugger->onExec(getPC().var);
+#endif
+
+#ifdef MD_PC_HISTOGRAM_PROBE
+			// Temporary, gated-out-by-default measurement hook: tallies retirements
+			// per PC so a one-off tool can quantify the idle-poll fraction. Not part
+			// of any product build (see mdLibTest/pcHistogramProbe.cpp).
+			if(pcHistogram)
+				++(*pcHistogram)[reg.pc.toWord()];
 #endif
 
 			pcCurrentInstruction = reg.pc.toWord();

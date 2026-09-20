@@ -17,11 +17,54 @@ namespace dsp56k
 		testCycleAccounting();
 		testCooperativeDoLoops();
 		testLongInterruptPeripherals();
+		testMovepPeripheralEffectiveAddress();
 		
 		runAllTests();
 		dsp.setCooperativeDoLoops(true);
 		runAllTests();
 		dsp.setCooperativeDoLoops(false);
+	}
+
+	void InterpreterUnitTests::testMovepPeripheralEffectiveAddress()
+	{
+		DefaultMemoryValidator validator;
+		Memory memory(validator, 0x1000);
+		Peripherals56303 peripherals;
+		PeripheralsNop unused;
+		DSP engine(memory, &peripherals, &unused);
+		auto& host = peripherals.getHI08();
+		auto& dma = peripherals.getDMA();
+		const auto execute = [&](const char* instruction)
+		{
+			const auto code = assembler.assemble(instruction);
+			verify(code.success());
+			for(unsigned i = 0; i < code.wordCount; ++i)
+				engine.memWriteP(0x100 + i, code.word[i]);
+			engine.setPC(0x100);
+			engine.execInterpreter();
+			verify(engine.getPC() == 0x100 + code.wordCount);
+		};
+
+		// Machinedrum's host-command handler programs DMA directly from HORX.
+		// Consuming the word without routing the EA through peripherals silently
+		// left both registers at zero and broke every subsequent host transfer.
+		const TWord arguments[] = {0x123, 0x13};
+		host.writeRX(arguments, 2);
+		execute("movep x:<<$ffffc6,x:>$ffffda"); // HORX -> DDR5
+		verify(dma.getDDR(5) == arguments[0]);
+		verify(host.rxData().size() == 1);
+		execute("movep x:<<$ffffc6,x:>$ffffd9"); // HORX -> DCO5
+		verify(dma.getDCO(5) == arguments[1]);
+		verify(!host.hasRXData());
+
+		// The opposite direction must also read the peripheral's register,
+		// including indirect EA addressing and its postincrement side effect.
+		execute("movep x:>$ffffda,x:<<$ffffc7"); // DDR5 -> HOTX
+		verify(host.hasTX() && host.readTX() == arguments[0]);
+		engine.regs().r[0].var = 0xffffd9;
+		execute("movep x:(r0)+,x:<<$ffffc7");
+		verify(host.hasTX() && host.readTX() == arguments[1]);
+		verify(engine.regs().r[0].var == 0xffffda);
 	}
 
 	void InterpreterUnitTests::testLongInterruptPeripherals()

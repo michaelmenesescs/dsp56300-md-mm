@@ -268,7 +268,9 @@ namespace dsp56k
 
 		if (m_dataRX.empty())
 		{
-			LOG("Empty read, PC=" << HEX(m_periph.getDSP().getPC().toWord()) << ", processingMode=" << m_periph.getDSP().getProcessingMode());
+			// Reachable from the audio thread on every empty HRX poll; keep it
+			// compiled out in Release like the rest of peripheral diagnostics.
+			LOG_DIAGNOSTIC("Empty read, PC=" << HEX(m_periph.getDSP().getPC().toWord()) << ", processingMode=" << m_periph.getDSP().getProcessingMode());
 			m_waitServeRXInterrupt = false;
 			// Under arbitration, an empty HRX read returns its retained value.
 			return m_hostCommandArbitration ? m_lastRXValue : 0;

@@ -2,12 +2,16 @@
 
 #include "dsp.h"
 #include "interrupts.h"
+#include "dsp56kBase/logging.h"
 
-#if 1
-#define LOGESSI(S)		LOG("ESSI" << m_index << ' ' << S)
-#else
-#define LOGESSI(S)
-#endif
+// This was left permanently enabled (a stray "#if 1" debug toggle), so every
+// ESSI register read/write unconditionally built a stringstream and did a
+// synchronous fputs to stdout in Release builds, including from host/68k bus
+// accesses that can occur on the audio thread. Route it through
+// LOG_DIAGNOSTIC (compiled out unless DSP56K_DIAGNOSTIC_LOGGING=1) like the
+// rest of the peripheral logging, so it costs nothing by default while still
+// being available for diagnosis when opted in.
+#define LOGESSI(S)		LOG_DIAGNOSTIC("ESSI" << m_index << ' ' << S)
 
 namespace dsp56k
 {

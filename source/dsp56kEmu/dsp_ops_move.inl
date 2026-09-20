@@ -365,10 +365,19 @@ namespace dsp56k
 			if( mmmrrr == MMMRRR_ImmediateData )
 				memWritePeriphFFFFC0( s, pp, ea );
 			else
-				memWritePeriphFFFFC0( s, pp, memRead( S, ea ) );
+				memWritePeriphFFFFC0(s, pp, isPeripheralAddress(ea)
+					? memReadPeriph(S, ea, Movep_ppea) : memRead(S, ea));
 		}
 		else
-			memWrite( S, ea, memReadPeriphFFFFC0( s, pp, Movep_ppea) );
+		{
+			const auto value = memReadPeriphFFFFC0(s, pp, Movep_ppea);
+			// The effective-address operand can name another peripheral, e.g.
+			// HORX -> DMA destination/count during a host-command transfer.
+			if(isPeripheralAddress(ea))
+				memWritePeriph(S, ea, value);
+			else
+				memWrite(S, ea, value);
+		}
 	}
 	inline void DSP::op_Movep_Xqqea(const TWord op)
 	{
