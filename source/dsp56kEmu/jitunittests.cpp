@@ -259,6 +259,94 @@ namespace dsp56k
 		verify(bounded == reference);
 		verify(bounded[2] >= 257);
 
+		// A cycle-domain peripheral deadline around a live DO loop must see the
+		// same block boundaries as repeated dispatch. Use fresh peripherals for
+		// each run, including their timer history, and compare every checkpoint.
+		//
+		// What this can and cannot observe: the DO loop retires cooperatively, so
+		// a whole loop may complete inside a single JIT block. SR_LF/LC are
+		// therefore never observable mid-loop and must not be asserted per
+		// target; the differential state comparison below (bounded dispatch vs
+		// repeated dispatch) is the property under test.
+		const auto runDo = [this](const bool _bounded)
+		{
+			DefaultMemoryValidator validator;
+			// Program memory must outlast every target: after the DO loop retires,
+			// the DSP simply falls through into zero-filled words, which execute as
+			// NOPs. Sizing this too small makes execution run off the end into an
+			// invalid PC (and a halted DSP that never reaches the larger targets).
+			Memory memory(validator, 0x8000);
+			Peripherals56303 peripheral;
+			PeripheralsNop unused;
+			DSP engine(memory, &peripheral, &unused);
+			const auto emitDo = [&](const char* _text, const TWord _pc)
+			{
+				const auto code = assembler.assemble(_text);
+				verify(code.success());
+				for(unsigned i = 0; i < code.wordCount; ++i)
+					engine.memWriteP(_pc + i, code.word[i]);
+			};
+			// do = 2 words. Straight-line body (inc A, nop) ending at the loop end
+			// 0x103; after LC retires, execution falls through into NOPs.
+			emitDo("do #$fff,>$103", 0x100);
+			emitDo("inc a", 0x102);
+			emitDo("nop", 0x103);
+			engine.setPC(0x100);
+			engine.setALU(false, TReg56(static_cast<TReg56::MyType>(0)));
+			peripheral.write(Timers::M_TLR0, 0);
+			peripheral.write(Timers::M_TCPR0, 1);
+			peripheral.write(Timers::M_TCSR0, 1u << Timer::M_TE);
+			peripheral.resetDelayCycles(0, IPeripherals::MaxDelayCycles);
+			constexpr uint64_t deadline = 4097;
+			peripheral.setCycleDeadline(deadline);
+
+			std::vector<std::vector<uint64_t>> observations;
+			for(const uint64_t target : {deadline - 1, deadline, deadline + 1,
+				deadline + 16, uint64_t{32768}})
+			{
+				if(_bounded)
+					engine.execUntilCycles(target);
+				else
+					while(engine.getCycles() < target)
+						engine.execJit();
+				verify(engine.getCycles() >= target);
+				const auto sr = engine.getSR();
+				const auto& r = engine.regs();
+				std::vector<uint64_t> state{
+					static_cast<uint64_t>(r.x.var), static_cast<uint64_t>(r.y.var),
+					static_cast<uint64_t>(r.a.var), static_cast<uint64_t>(r.b.var),
+					static_cast<uint64_t>(sr.var), static_cast<uint64_t>(r.omr.var),
+					static_cast<uint64_t>(r.pc.var),
+					static_cast<uint64_t>(r.la.var), static_cast<uint64_t>(r.lc.var),
+					static_cast<uint64_t>(r.sp.var), static_cast<uint64_t>(r.sc.var),
+					static_cast<uint64_t>(r.sz.var), static_cast<uint64_t>(r.vba.var),
+					static_cast<uint64_t>(r.ep.var),
+					engine.getInstructionCounter(), engine.getCycles(),
+					peripheral.getTargetClock(), peripheral.getDelayCycles(),
+					peripheral.getTimers().readTCR(0), peripheral.getTimers().readTCSR(0)};
+				for(unsigned i = 0; i < 8; ++i)
+				{
+					state.push_back(r.r[i].var);
+					state.push_back(r.n[i].var);
+					state.push_back(r.m[i].var);
+					state.push_back(r.mMask[i]);
+					state.push_back(r.mModulo[i]);
+				}
+				for(const auto& entry : r.ss)
+					state.push_back(entry.var);
+				observations.push_back(std::move(state));
+			}
+			verify(peripheral.getTimers().readTCR(0) > 0);
+			verify(engine.regs().lc.var == 0);
+			verify(!engine.sr_test_noCache(SR_LF));
+			// Guard against the DO loop silently not executing: the body must have
+			// retired all 0x1000 iterations for the differential to mean anything.
+			verify(engine.getInstructionCounter() >= 0x1000);
+			return observations;
+		};
+		verify(runDo(false) == runDo(true));
+		std::cout << "boundedDispatch: DO-loop registers/counters/peripherals match at 5 cycle targets\n";
+
 		constexpr TWord highPC = 0x70000;
 		dsp.resetHW();
 		emitToMemory("jmp (r0)", loopPC);
