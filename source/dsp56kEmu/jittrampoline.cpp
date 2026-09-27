@@ -1,4 +1,5 @@
 #include "jittrampoline.h"
+#include "iosjitprobe.h"
 
 #include "dsp.h"
 #include "jitemitter.h"
@@ -238,7 +239,10 @@ namespace dsp56k
 
 		m_asm.ret();
 		m_asm.finalize();
-		m_runtime.add(&m_funcExecLoop, &codeHolder);
+		if (const auto err = m_runtime.add(&m_funcExecLoop, &codeHolder))
+			logIosJitStatus(std::string("JitTrampoline: runtime.add(m_funcExecLoop) failed, asmjit error ") + std::to_string(err) + " " + asmjit::DebugUtils::errorAsString(err));
+		else
+			logIosJitStatus(std::string("JitTrampoline: runtime.add(m_funcExecLoop) ok"));
 
 		if (auto* profiling = m_dsp.getJit().getProfilingSupport())
 			profiling->addFunction("trampolineExecLoop", reinterpret_cast<void*>(m_funcExecLoop), codeHolder);
@@ -390,7 +394,10 @@ namespace dsp56k
 
 		m_asm.ret();
 		m_asm.finalize();
-		m_runtime.add(&m_funcExecUntilCycles, &codeHolder);
+		if (const auto err = m_runtime.add(&m_funcExecUntilCycles, &codeHolder))
+			logIosJitStatus(std::string("JitTrampoline: runtime.add(m_funcExecUntilCycles) failed, asmjit error ") + std::to_string(err) + " " + asmjit::DebugUtils::errorAsString(err));
+		else
+			logIosJitStatus(std::string("JitTrampoline: runtime.add(m_funcExecUntilCycles) ok"));
 
 		if (auto* profiling = m_dsp.getJit().getProfilingSupport())
 			profiling->addFunction("trampolineExecUntilCycles", reinterpret_cast<void*>(m_funcExecUntilCycles), codeHolder);
@@ -447,7 +454,10 @@ namespace dsp56k
 
 		m_asm.ret();
 		m_asm.finalize();
-		m_runtime.add(&m_funcExecOne, &codeHolder);
+		if (const auto err = m_runtime.add(&m_funcExecOne, &codeHolder))
+			logIosJitStatus(std::string("JitTrampoline: runtime.add(m_funcExecOne) failed, asmjit error ") + std::to_string(err) + " " + asmjit::DebugUtils::errorAsString(err));
+		else
+			logIosJitStatus(std::string("JitTrampoline: runtime.add(m_funcExecOne) ok"));
 
 		if (auto* profiling = m_dsp.getJit().getProfilingSupport())
 			profiling->addFunction("trampolineExecOne", reinterpret_cast<void*>(m_funcExecOne), codeHolder);

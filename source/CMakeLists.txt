@@ -6,7 +6,10 @@ option(DSP56K_FORCE_INTERPRETER "Disable the JIT and use the interpreter" OFF)
 # iOS kills the process when it executes JIT-generated code: the pages can be mapped, but
 # without the Apple-restricted dynamic-codesigning entitlement running them is fatal.
 # Verified on iOS 26.6.2 / A15 - SIGKILL on the first emulator audio callback.
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+# DSP56K_IOS_ALLOW_JIT keeps the JIT for development builds that are launched with a debugger
+# attached (get-task-allow + CS_DEBUGGED); such a build will not run without one.
+option(DSP56K_IOS_ALLOW_JIT "iOS: keep the JIT (development builds launched under a debugger only)" OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT DSP56K_IOS_ALLOW_JIT)
 	set(DSP56K_FORCE_INTERPRETER ON CACHE BOOL "Disable the JIT and use the interpreter" FORCE)
 endif()
 

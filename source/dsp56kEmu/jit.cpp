@@ -1,5 +1,10 @@
 #include "jit.h"
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+#include "iosjitprobe.h"
+
 #include "dsp.h"
 #include "jitblock.h"
 #include "jitdspmode.h"
@@ -115,11 +120,14 @@ namespace dsp56k
 		Jit::toJitPtr(_jit)->run(_pc);
 	}
 
-	Jit::Jit(DSP& _dsp) : m_dsp(_dsp), m_trampoline(_dsp), m_rt(new JitRuntime())
+	Jit::Jit(DSP& _dsp) : m_dsp(_dsp), m_trampoline((runIosJitProbe(), _dsp)), m_rt(new JitRuntime())
 	{
-#ifdef __APPLE__
+#if defined(__APPLE__) && TARGET_OS_OSX
 		// One default table per DSP is prepared during construction. New DSP
 		// modes privately map it instead of filling large tables on first use.
+		// Not on iOS: every mode would reserve a full-size (sizeP) table and the
+		// process runs out of address space after ~10 modes. There the table grows
+		// on demand up to the highest P address actually used.
 		const auto count = _dsp.memory().sizeP();
 		if (m_dispatchTemplate.allocate(count * sizeof(TJitFunc)))
 			std::uninitialized_fill_n(static_cast<TJitFunc*>(m_dispatchTemplate.data()), count, &funcCreate);
@@ -376,8 +384,17 @@ namespace dsp56k
 
 		if(itExisting == m_chains.end())
 		{
-			m_currentChain = new JitBlockChain(*this, mode, m_maxUsedPAddress);
-			m_chains.insert(std::make_pair(mode, m_currentChain));
+			try
+			{
+				m_currentChain = new JitBlockChain(*this, mode, m_maxUsedPAddress);
+				m_chains.insert(std::make_pair(mode, m_currentChain));
+			}
+			catch(const std::exception& e)
+			{
+				LOG("JIT: creating block chain failed: " << e.what() << ", " << m_chains.size() << " chains exist");
+				logIosJitStatus(std::string("JIT: creating block chain failed: ") + e.what() + ", chains=" + std::to_string(m_chains.size()));
+				throw;
+			}
 		}
 		else
 		{

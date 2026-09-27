@@ -54,6 +54,7 @@ utils.cpp utils.h
 
 set(SOURCES_JIT
 jit.cpp jit.h
+iosjitprobe.cpp iosjitprobe.h
 jitasmjithelpers.cpp jitasmjithelpers.h
 jitconfig.h
 jitdspmode.cpp jitdspmode.h
